@@ -3,6 +3,7 @@ library(magrittr)
 library(lubridate)
 library(tm)
 library(ggplot2)
+library(LaF)
 
 #' Create a term document matrix from a text file
 #' 
@@ -10,10 +11,23 @@ library(ggplot2)
 #' @return Term Document Matrix for \code{file.in}
 #' @examples
 #' get_corpus_tdm("myfile.txt")
-get_corpus_tdm <- function(file.in, line.count) {
-  file.dat <- get_file(file.in, line.count)
+get_corpus_tdm <- function(file.in, line.count, sampled) {
+  file.dat <- get_file(file.in, line.count, sampled)
   corpus.dat <- Corpus(VectorSource(file.dat))
-  control.list <- list(stopwords = TRUE,
+  
+  # TASKS
+  # 1. tokenize words by eliminating standard stop words,
+  #    punctionation, and numbers
+  #
+  # 2. remove profane words
+  #
+  # 3. sample lines randomly
+  #
+  
+  stopwords <- c(stopwords(), 
+                 read.table("http://www.cs.cmu.edu/~biglou/resources/bad-words.txt", 
+                            stringsAsFactors = FALSE)$V1)
+  control.list <- list(stopwords = stopwords,
                        removePunctuation = TRUE,
                        removeNumbers = TRUE,
                        tolower = TRUE)
@@ -23,15 +37,23 @@ get_corpus_tdm <- function(file.in, line.count) {
 #' Read in a text file
 #' 
 #' @param path file to read
+#' @param line.count number of lines to read
+#' @param sampled Boolean to indicate if lines are read randomly
 #' @return text contents of \code{path}
 #' @examples
 #' get_file("myfile.txt")
-get_file <- function(path, line.count = -1) {
+#' get_file("myfile.txt", line.count = 1000, sampled = TRUE)
+get_file <- function(path, line.count = -1, sampled = TRUE) {
   con <- file(path, open = "rt")
   if (line.count == -1) {
     text <- readLines(con)
   } else {
-    text <- readLines(con, n = line.count)
+    if (sampled) {
+      close(con)
+      return(sample_lines(path, line.count))
+    } else {
+      text <- readLines(con, n = line.count)
+    }
   }
   close(con)
   return(text)
@@ -39,11 +61,12 @@ get_file <- function(path, line.count = -1) {
 
 #' Do the work
 #' @param line.count read only first \code{line.count} lines of each file
+#' @param sampled BOOLEAN indicates whether to randomize lines read in corpus
 #' @param rdata.out file to save memory environment
 #' @return Nothing returned
 #' @examples
 #' readCorpus_main(debug = TRUE)
-readCorpus_main <- function(line.count = 100, rdata.out = "output.RData") {
+readCorpus_main <- function(line.count = 100, sampled = TRUE, rdata.out = "output.RData") {
   path.en <- "final/en_US"
   files.en <- dir(path = path.en, pattern = "en_.+\\.txt")
   
@@ -52,7 +75,7 @@ readCorpus_main <- function(line.count = 100, rdata.out = "output.RData") {
     
     # adapted from Machine Learning for Hackers, Drew Conway & John Myles White
     # Chapter 3, p.80 
-    corpus.tdm <- get_corpus_tdm(paste0(path.en, "/", f), line.count)
+    corpus.tdm <- get_corpus_tdm(paste0(path.en, "/", f), line.count, sampled)
     corpus.matrix <- as.matrix(corpus.tdm)
     corpus.wc <- rowSums(corpus.matrix)
     corpus.df <- data.frame(cbind(names(corpus.wc),
@@ -78,8 +101,8 @@ readCorpus_main <- function(line.count = 100, rdata.out = "output.RData") {
   }
   
   if(!is.null(rdata.out)) {
-    save.image(rdata.out)
     assign("corpus", corpus, envir = .GlobalEnv)
+    save.image(rdata.out)
   }
   
   head(corpus[with(corpus, order(-occurrence)), ])  
