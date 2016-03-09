@@ -6,6 +6,7 @@ library(ggplot2)
 library(LaF)
 library(RWeka)
 library(SnowballC)
+library(textcat)
 
 # WEEK 1 - TASKS
 # 1-1. tokenize words by eliminating standard stop words,
@@ -71,7 +72,7 @@ get_corpus_tdm <- function(corpus.dat) {
   corpus.dat <- tm_map(corpus.dat, stripWhitespace, mc.cores = 1)
   
   # task 2-3
-  corpus.dat <- tm_map(corpus.dat, stemDocument, language = "english", mc.cores = 1)
+  #corpus.dat <- tm_map(corpus.dat, stemDocument, language = "english", mc.cores = 1)
   
   # Stack Overflow fix
   # http://stackoverflow.com/questions/18504559/twitter-data-analysis-error-in-term-document-matrix
@@ -138,6 +139,9 @@ readCorpus_main <- function(line.count = 100, sampled = TRUE, rdata.out = "outpu
     names(corpus.df) <- c("word", "freq")
     corpus.df$freq <- as.numeric(corpus.df$freq)
     corpus.df$ngram <- sapply(gregexpr("\\S+", corpus.df[, c("word")]), length)
+    
+    # task 2-3
+    corpus.df$lang <- textcat(corpus.df$word)
     corpus.df$fn <- f
     
     
