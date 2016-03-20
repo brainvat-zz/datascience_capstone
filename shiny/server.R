@@ -3,13 +3,13 @@ library(ggplot2)
 source("readCorpus.R")
 
 if (FALSE) { # not ready for production
-  blogs <- get_files("../final/en_US/", "en_US.blogs.txt", line.count = 200, use.cache = FALSE)
+  blogs <- get_files("packrat/final/en_US/", "en_US.blogs.txt", line.count = 200, use.cache = FALSE)
   readCorpus_main(blogs, global.out = "blogs", rdata.out = "blogs")
   
-  news <- get_files("../final/en_US/", "en_US.news.txt", line.count = 200, use.cache = FALSE)
+  news <- get_files("packrat/final/en_US/", "en_US.news.txt", line.count = 200, use.cache = FALSE)
   readCorpus_main(news, global.out = "news")
   
-  tweets <- get_files("../final/en_US/", "en_US.twitter.txt", line.count = 200, use.cache = FALSE)
+  tweets <- get_files("packrat/final/en_US/", "en_US.twitter.txt", line.count = 200, use.cache = FALSE)
   readCorpus_main(tweets, global.out = "tweets")
 } else {
   load("cached.RData")

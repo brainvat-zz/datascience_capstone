@@ -13,6 +13,17 @@ options(warnings=-1)
 ![Proogle Shiny App](shiny/www/proogle.png)
 </div>
 
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+<script>
+$(document).ready(function(){
+    $("button").click(function(){
+        $("pre").toggle();
+    });
+    $("pre").hide();
+});
+</script>
+<button>Hide / Unhide Code</button>
+
 The goal in this course is to produce a Shiny app whose primary function is
 to predict the completion of a phrase based on the first word or two that
 an end user types in.  The app should present the user with several
@@ -53,21 +64,21 @@ data frame with 1-, 2-, and 3-word ngrams.
 ```
 ```{r read_news, eval = FALSE}
   # Fetch Blogs sample
-  blogs <- get_files(path = "../final/en_US/", 
+  blogs <- get_files(path = "shiny/packrat/final/en_US/", 
                      pattern = "en_US.blogs.txt", 
                      line.count = 200, 
                      use.cache = FALSE)
   readCorpus_main(blogs, global.out = "blogs")
   
   # Fetch News sample
-  news <- get_files(path = "../final/en_US/", 
+  news <- get_files(path = "shiny/packrat/final/en_US/", 
                     pattern = "en_US.news.txt", 
                     line.count = 200, 
                     use.cache = FALSE)
   readCorpus_main(news, global.out = "news")
   
   # Fetch Twitter sample
-  tweets <- get_files(path = "../final/en_US/", 
+  tweets <- get_files(path = "shiny/packrat/final/en_US/", 
                       pattern = "en_US.twitter.txt", 
                       line.count = 200, 
                       use.cache = FALSE)

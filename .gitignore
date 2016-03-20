@@ -5,5 +5,5 @@
 *.html
 *.bak
 *.zip
-*/final/*
+*/packrat/*
 *.pdf
