@@ -2,6 +2,8 @@
 .Rhistory
 .corpus*
 *.RData
+*.html
+*.bak
 *.zip
-final/*
+*/final/*
 *.pdf

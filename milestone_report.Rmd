@@ -1,0 +1,96 @@
+---
+title: 'Assignment: Milestone Report'
+author: "Allen Hammock"
+date: "March 19, 2016"
+output: html_document
+---
+```{r setup, echo = FALSE}
+options(warnings=-1)
+```
+
+# Executive Summary
+<div style="width:215pt; height:110pt; float:right; padding-left: 50px;">
+![Proogle Shiny App](shiny/www/proogle.png)
+</div>
+
+The goal in this course is to produce a Shiny app whose primary function is
+to predict the completion of a phrase based on the first word or two that
+an end user types in.  The app should present the user with several
+matching choices (like Google auto-complete) and keep track of whether the
+user selects any of them.
+
+The model will train from a U.S. English corpus consisting of:
+
+* Nearly 900,000 lines from blog sites
+* Over 1 million lines of text from news sources
+* Nearly 2.4 million tweets
+
+From the exploratory analysis, a few things became clear:
+
+* __Need for Sampling__. While the plain text files are small enough to be loaded into memory on my iMac, the processing needed to reduce the data to a term document matrix is so heavy that my R code could run overnight and still not produce a usable data frame.  As a result, [I wrote R functions](https://github.com/brainvat/datascience_capstone/blob/9c776a9d681c774f7b424b0fda74db4645891509/readCorpus.R#L46) to sample the text files and cache the results for fast loading.  
+
+* __Need for Scrubbing__. Especially among the Twitter feeds, there are a lot of non-ASCII characters that cause methods in the `tm` package [to throw exceptions](http://stackoverflow.com/questions/18504559/twitter-data-analysis-error-in-term-document-matrix).  This was a huge frustration and [my efforts](https://github.com/brainvat/datascience_capstone/commit/c2c413f88edb1a60549b8582333305bd7a382690) to completely eliminate the problem through scrubbing and stemming never fully worked.  
+
+* __Filtering and Language Detection__. It was easy enough to filter out stop words and to remove profanity using a publicly available database, but checking to make sure the tokenized phrases were proper English [proved much more difficult](https://github.com/brainvat/datascience_capstone/commit/0b58d5c1d477b1c2082d44a70c937b03c28bb224?diff=split).  In the final model design, I may need to sample the corpus several times, removing non-English words on each pass, in order to build a training set large enough to have a model that is is well balanced between sensitivity and specificity.
+
+In the next phase, I plan to have a working model and a basic functioning Shiny app.
+
+# Exploratory Analysis
+
+```{r load_library}
+# load my hand-written utility package for processing
+# text files into a usable corpus
+source("shiny/readCorpus.R")
+```
+
+Since memory was a concern, first I wrote a function to sample lines randomly
+from the text files.  From that source, I tokenized the data, removed stop words
+and profanity, generated a term document matrix, and ultimately produced a
+data frame with 1-, 2-, and 3-word ngrams.
+
+```{r fetch_cache, echo = FALSE}
+  load("shiny/cached.RData") # use current cached set
+```
+```{r read_news, eval = FALSE}
+  # Fetch Blogs sample
+  blogs <- get_files(path = "../final/en_US/", 
+                     pattern = "en_US.blogs.txt", 
+                     line.count = 200, 
+                     use.cache = FALSE)
+  readCorpus_main(blogs, global.out = "blogs")
+  
+  # Fetch News sample
+  news <- get_files(path = "../final/en_US/", 
+                    pattern = "en_US.news.txt", 
+                    line.count = 200, 
+                    use.cache = FALSE)
+  readCorpus_main(news, global.out = "news")
+  
+  # Fetch Twitter sample
+  tweets <- get_files(path = "../final/en_US/", 
+                      pattern = "en_US.twitter.txt", 
+                      line.count = 200, 
+                      use.cache = FALSE)
+  readCorpus_main(tweets, global.out = "tweets")
+
+```
+
+# Initial Findings
+
+
+# Future Plans
+
+
+```{r save_state, echo = FALSE}
+save.image("milestone_report.RData")
+```
+
+__Footnote__
+
+If you are compiling this document on your local computer, you can load the
+final machine state from an RData frame saved out at the end of each run. Execute
+the `load` command in your R console.
+
+```{r restore_state, eval = FALSE}
+load("milestone_report.RData")
+```
