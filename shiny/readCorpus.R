@@ -74,7 +74,9 @@ get_corpus_tdm <- function(corpus.dat, use.cache = TRUE, use.stemming = FALSE) {
     # http://stackoverflow.com/questions/26834576/big-text-corpus-breaks-tm-map
     # this doesn't seem to really fix anything
     corpus.dat <- tm_map(corpus.dat,
-                         content_transformer(function(x) iconv(x, to = 'utf-8-mac', sub = '')),
+                         # maybe this one? http://tm.r-forge.r-project.org/faq.html#Bigrams
+                         content_transformer(function(x) iconv(enc2utf8(x), sub = "byte")),
+                         #content_transformer(function(x) iconv(x, to = 'utf-8-mac', sub = '')),
                          mc.cores = 1,
                          mc.silent = TRUE)  
     

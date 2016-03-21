@@ -7,3 +7,6 @@
 *.zip
 */packrat/*
 *.pdf
+*_report_*
+rsconnect/*
+shiny/rsconnect/*

@@ -2,15 +2,42 @@
 title: 'Assignment: Milestone Report'
 author: "Allen Hammock"
 date: "March 19, 2016"
-output: html_document
+output: 
+  html_document: 
+    highlight: textmate
+    toc: yes
 ---
-```{r setup, echo = FALSE}
+<style type="text/css">
+#TOC {
+  position: fixed;
+  left: 0;
+  top: 10px;
+  width: 200px;
+  height: 100%;
+  overflow:auto;
+}
+
+body {
+  max-width: 800px;
+  margin: auto;
+  margin-left:210px;
+  line-height: 20px;
+}
+</style>
+```{r setup, echo = FALSE, warnings = FALSE}
 options(warnings=-1)
+suppressMessages(library(knitr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(textcat))
 ```
 
 # Executive Summary
 <div style="width:215pt; height:110pt; float:right; padding-left: 50px;">
 ![Proogle Shiny App](shiny/www/proogle.png)
+<p style="text-align:center">
+__[Try the Alpha Version!][published_shiny_app]__<br />
+<button>Hide / Unhide Code</button>
+</p>
 </div>
 
 <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
@@ -19,32 +46,28 @@ $(document).ready(function(){
     $("button").click(function(){
         $("pre").toggle();
     });
-    $("pre").hide();
+    //$("pre").hide();
 });
 </script>
-<button>Hide / Unhide Code</button>
 
-The goal in this course is to produce a Shiny app whose primary function is
-to predict the completion of a phrase based on the first word or two that
-an end user types in.  The app should present the user with several
-matching choices (like Google auto-complete) and keep track of whether the
-user selects any of them.
 
-The model will train from a U.S. English corpus consisting of:
+The goal in this course is create a Shiny app that uses a machine learning
+model to correctly guess the 2nd or 3rd word in a phrase after the user has
+begun typing.  The model will train from a U.S. English corpus of words
+and phrases captured from blogs, news sites, and Twitter feeds.
 
-* Nearly 900,000 lines from blog sites
-* Over 1 million lines of text from news sources
-* Nearly 2.4 million tweets
+During my exploratory analysis, I came across several challenges:
 
-From the exploratory analysis, a few things became clear:
+* __Need for Sampling__. The size of the plain text files makes building the word count frequency table very difficult.  As a result, I wrote R functions __[(1)][r_code_text_sampling]__ to sample the text files and cache the results for fast loading.  
 
-* __Need for Sampling__. While the plain text files are small enough to be loaded into memory on my iMac, the processing needed to reduce the data to a term document matrix is so heavy that my R code could run overnight and still not produce a usable data frame.  As a result, [I wrote R functions](https://github.com/brainvat/datascience_capstone/blob/9c776a9d681c774f7b424b0fda74db4645891509/readCorpus.R#L46) to sample the text files and cache the results for fast loading.  
+* __Need for Scrubbing__. Methods in the `tm` library used for text data mining easily break and throw exceptions with this data __[(2)][term_document_matrix_throws_errors]__.  I spent a large number of wasted hours trying to overcome formatting issues in the text files.
 
-* __Need for Scrubbing__. Especially among the Twitter feeds, there are a lot of non-ASCII characters that cause methods in the `tm` package [to throw exceptions](http://stackoverflow.com/questions/18504559/twitter-data-analysis-error-in-term-document-matrix).  This was a huge frustration and [my efforts](https://github.com/brainvat/datascience_capstone/commit/c2c413f88edb1a60549b8582333305bd7a382690) to completely eliminate the problem through scrubbing and stemming never fully worked.  
+* __Filtering and Language Detection__. Out of the box functions for detecting whether the words were English are not very effective without a lot of tuning __[(3)][github_language_detection_code]__.  
 
-* __Filtering and Language Detection__. It was easy enough to filter out stop words and to remove profanity using a publicly available database, but checking to make sure the tokenized phrases were proper English [proved much more difficult](https://github.com/brainvat/datascience_capstone/commit/0b58d5c1d477b1c2082d44a70c937b03c28bb224?diff=split).  In the final model design, I may need to sample the corpus several times, removing non-English words on each pass, in order to build a training set large enough to have a model that is is well balanced between sensitivity and specificity.
-
-In the next phase, I plan to have a working model and a basic functioning Shiny app.
+Thus far, I have a basic prototype of the Shiny app and I have successfully built the 
+term document matrix which will eventually feed the predictive model.  In the next
+phase, I will connect the app to a functioning model and attempt to tune it for accuracy,
+hopefully finding a good balance between specificity and recall __[(4)][wikipedia_accuracy]__.
 
 # Exploratory Analysis
 
@@ -54,49 +77,158 @@ In the next phase, I plan to have a working model and a basic functioning Shiny 
 source("shiny/readCorpus.R")
 ```
 
-Since memory was a concern, first I wrote a function to sample lines randomly
-from the text files.  From that source, I tokenized the data, removed stop words
-and profanity, generated a term document matrix, and ultimately produced a
-data frame with 1-, 2-, and 3-word ngrams.
+## Basic Summaries
 
+First, we need to get a handle on how big the data set is.  Let's read it in and
+and count the lines and words using a regular expression.
+
+```{r blogs_analysis, eval = FALSE, cache = TRUE, warnings = FALSE}
+# Summarize Blogs
+blogs <- get_files(path = "shiny/packrat/final/en_US/", 
+                   pattern = "en_US.blogs.txt", 
+                   line.count = -1,  # read all the lines
+                   use.cache = FALSE)
+
+blogs.line.count <- length(blogs)
+blogs.word.count <- sum(sapply(gregexpr("[A-z]\\W+", blogs), length) + 1L)
+rm(blogs) # recover memory, file is too large
+
+# Summarize News
+news <- get_files(path = "shiny/packrat/final/en_US/", 
+                   pattern = "en_US.news.txt", 
+                   line.count = -1,  # read all the lines
+                   use.cache = FALSE)
+
+news.line.count <- length(news)
+news.word.count <- sum(sapply(gregexpr("[A-z]\\W+", news), length) + 1L)
+rm(news) # recover memory, file is too large
+
+# Summarize Twitter
+tweets <- get_files(path = "shiny/packrat/final/en_US/", 
+                   pattern = "en_US.twitter.txt", 
+                   line.count = -1,  # read all the lines
+                   use.cache = FALSE)
+
+tweets.line.count <- length(tweets)
+tweets.word.count <- sum(sapply(gregexpr("[A-z]\\W+", tweets), length) + 1L)
+rm(tweets) # recover memory, file is too large
+```
 ```{r fetch_cache, echo = FALSE}
   load("shiny/cached.RData") # use current cached set
 ```
-```{r read_news, eval = FALSE}
-  # Fetch Blogs sample
-  blogs <- get_files(path = "shiny/packrat/final/en_US/", 
-                     pattern = "en_US.blogs.txt", 
-                     line.count = 200, 
-                     use.cache = FALSE)
-  readCorpus_main(blogs, global.out = "blogs")
-  
-  # Fetch News sample
-  news <- get_files(path = "shiny/packrat/final/en_US/", 
-                    pattern = "en_US.news.txt", 
-                    line.count = 200, 
-                    use.cache = FALSE)
-  readCorpus_main(news, global.out = "news")
-  
-  # Fetch Twitter sample
-  tweets <- get_files(path = "shiny/packrat/final/en_US/", 
-                      pattern = "en_US.twitter.txt", 
-                      line.count = 200, 
-                      use.cache = FALSE)
-  readCorpus_main(tweets, global.out = "tweets")
 
+* __Blogs__
+    + `r prettyNum(blogs.line.count, big.mark = ",")` lines
+    + `r prettyNum(blogs.word.count, big.mark = ",")` words
+* __News__
+    + `r prettyNum(news.line.count, big.mark = ",")` lines
+    + `r prettyNum(news.word.count, big.mark = ",")` words
+* __Twitter__
+    + `r prettyNum(tweets.line.count, big.mark = ",")` lines
+    + `r prettyNum(tweets.word.count, big.mark = ",")` words
+ 
+Since memory was a concern, I wrote a function to sample lines randomly
+from the text files.  From that source, I tokenized the data, removed stop words
+and profanity, generated a term document matrix, and ultimately produced a
+data frame with 1-, 2-, and 3-word ngrams.__[(5)][github_tokenizer]__
+
+For this report, I'm using a cached data set from one of the successful runs.
+
+```{r create_corpus, eval = FALSE}
+readCorpus_main(text.in = get_files("final/en_US/", ".*\\.txt", line.count = 1500))
 ```
 
-# Initial Findings
+Even after stripping out non-US characters the `tm` package still has a problem with
+some of the lines in the file, so I built in a loop that would re-sample the file.
+
+## Data Tables
+
+Now, we can get a look at the word counts in our randomly sampled data sets.  Since we are
+exploring, it's interesting to look at different aspects of the data, for example whether
+or not there may be sufficient data for predicting 3-word phrases, or whether easy-to-use
+language detection packages like `textcat` will be useful for scrubbing out additional
+stop words.
+
+### Blogs
+
+Here are the most frequent words in the Blogs data set.
+
+`r kable(head(blogs.df %>% arrange(desc(freq))))`
+
+### News
+
+Here's a quick look at the most common 2-word phrases in the News data set.
+
+`r kable(head(news.df %>% filter(ngram >= 2) %>% arrange(desc(freq))))`
+
+### Tweets
+
+For Twitter, there are no phrases with 3 or more words that were repeated more
+than once in our sample.
+
+`r kable(head(tweets.df %>% filter(ngram >= 3) %>% arrange(desc(freq))))`
+
+## Plots
+
+### Frequency of 1-word phrases by word length
+
+```{r plot_word_counts, cache = TRUE}
+blogs.df$source <- "blogs"
+news.df$source <- "news"
+tweets.df$source <- "tweets"
+
+blogs.df %>%
+  rbind(news.df) %>%
+  rbind(tweets.df) %>%
+  filter(ngram == 1) %>%  
+  mutate(word_length = nchar(word)) %>%
+  mutate(ngram = as.factor(ngram)) %>%
+  ggplot(aes(x = word_length, fill = source)) + 
+  geom_density(alpha = 0.3) + 
+  #geom_histogram(bins = 20, position = "dodge") +
+  ggtitle("Single Word Frequency by Word Length")
+```
+
+### Poor Language Detection from Texcat Package
+
+```{r plot_language_detection, cache = TRUE}
+blogs.df$lang <- textcat(blogs.df$word)
+news.df$lang <-  textcat(news.df$word)
+tweets.df$lang <-  textcat(tweets.df$word)
+
+blogs.df %>%
+  rbind(news.df) %>%
+  rbind(tweets.df) %>%
+  mutate(ngram = as.factor(ngram)) %>%
+  mutate(is_english = ((lang == "english") | is.na(lang))) %>%
+  arrange(desc(freq)) %>%
+  head(n = 1000) %>%
+  ggplot(aes(x = freq)) + 
+  geom_histogram(bins = 20, position = "dodge") +
+  ggtitle("Top 1000 Words Correctly Classified as English by Textcat") +
+  facet_grid(is_english ~ .)
+```
+
+# Next Steps
+
+In the next phase, we'll start to estimate Ngram probabilities and we'll look for
+efficient forms of storage that allow us to expand out the number of terms modeled
+in our corpus. Initial research on the subject suggests several strategies:
+
+* __Good Turning frequency estimation__ __[(6)][good_turing_frequency_estimation]__ __[(7)][good_turing_c_code]__ is a statistical method for estimating the probability of a previously unobserved object based on the frequency of observations of other objects
+
+* __Maximum Likelihood Estimates and Markov Chain Modeling__ __[(8)][stanford_nlp_markov_chain]__ from the Stanford course on Natural Language Processing has a simple method of predicting the probability of a word based on calculating a matrix of probabilities from the term document matrix we have already built 
 
 
-# Future Plans
 
 
 ```{r save_state, echo = FALSE}
 save.image("milestone_report.RData")
 ```
 
-__Footnote__
+# Footnotes
+
+## Running this code locally
 
 If you are compiling this document on your local computer, you can load the
 final machine state from an RData frame saved out at the end of each run. Execute
@@ -105,3 +237,26 @@ the `load` command in your R console.
 ```{r restore_state, eval = FALSE}
 load("milestone_report.RData")
 ```
+
+## References
+
+1. _Author's utility code showing routines for sampling lines of text_, __GitHub__, [https://github.com/brainvat/datascience_capstone/blob/9c776a9d681c774f7b424b0fda74db4645891509/readCorpus.R#L46][r_code_text_sampling]
+2. _Twitter Data Analysis - Error in Term Document Matrix_, __Stack Overflow__, [http://stackoverflow.com/questions/18504559/twitter-data-analysis-error-in-term-document-matrix][term_document_matrix_throws_errors] 
+3. _Github commit showing experiments to detect language_, __GitHub__, [https://github.com/brainvat/datascience_capstone/commit/0b58d5c1d477b1c2082d44a70c937b03c28bb224][github_language_detection_code] 
+4. _Sensitivity and specificity_, __Wikipedia__, [https://en.wikipedia.org/wiki/Sensitivity_and_specificity][wikipedia_accuracy]
+5. _Github file shows function to tokenize corpus, remove stopwords, and calculate term document matrix_, __GitHub__, [https://github.com/brainvat/datascience_capstone/blob/c2c413f88edb1a60549b8582333305bd7a382690/readCorpus.R#L66][github_tokenizer] 
+6.  _Good–Turing frequency estimation_, __Wikipedia__, [https://en.wikipedia.org/wiki/Good–Turing_frequency_estimation][good_turing_frequency_estimation] 
+7. _Simple Good-Turing Frequency Estimator by Geoffrey Sampson, with help from Miles Dennis_, [http://www.grsampson.net/D_SGT.c][good_turing_c_doe]
+8. _4 - 2 - Estimating N-gram Probabilities - Stanford NLP - Professor Dan Jurafsky & Chris Manning_, __YouTube__, [https://www.youtube.com/watch?v=o-CvoOkVrnY&list=LLlWbaM5GSn1vH0i3QZ2yx1w&index=1][stanford_nlp_markov_chain]
+9. _Unfinished alpha version of Shiny app by author_, __ShinyApps.io__, [https://brainvat.shinyapps.io/coursera-text-prediction-capstone/][published_shiny_app] 
+
+[published_shiny_app]: https://brainvat.shinyapps.io/coursera-text-prediction-capstone/ "Unfinished alpha version of Shiny app by author"
+[r_code_text_sampling]: https://github.com/brainvat/datascience_capstone/blob/9c776a9d681c774f7b424b0fda74db4645891509/readCorpus.R#L46 "Author's utility code showing routines for sampling lines of text"
+[term_document_matrix_throws_errors]: http://stackoverflow.com/questions/18504559/twitter-data-analysis-error-in-term-document-matrix "Twitter Data Analysis - Error in Term Document Matrix"
+[github_language_detection_code]: https://github.com/brainvat/datascience_capstone/commit/0b58d5c1d477b1c2082d44a70c937b03c28bb224 "Github commit showing experiments to detect language"
+[wikipedia_accuracy]: https://en.wikipedia.org/wiki/Sensitivity_and_specificity "Sensitivity and specificity"
+[github_tokenizer]: https://github.com/brainvat/datascience_capstone/blob/c2c413f88edb1a60549b8582333305bd7a382690/readCorpus.R#L66 "Github file shows function to tokenize corpus, remove stopwords, and calculate term document matrix"
+[good_turing_frequency_estimation]: https://en.wikipedia.org/wiki/Good–Turing_frequency_estimation "Good–Turing frequency estimation"
+[good_turing_c_code]: http://www.grsampson.net/D_SGT.c "Simple Good-Turing Frequency Estimator by Geoffrey Sampson, with help from Miles Dennis"
+[stanford_nlp_markov_chain]: https://www.youtube.com/watch?v=o-CvoOkVrnY&list=LLlWbaM5GSn1vH0i3QZ2yx1w&index=1 "4 - 2 - Estimating N-gram Probabilities - Stanford NLP - Professor Dan Jurafsky & Chris Manning"
+
