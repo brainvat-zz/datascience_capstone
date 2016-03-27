@@ -10,3 +10,7 @@
 *_report_*
 rsconnect/*
 shiny/rsconnect/*
+training*/*
+testing*/*
+*.db
+
