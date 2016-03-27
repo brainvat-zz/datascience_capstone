@@ -13,4 +13,4 @@ shiny/rsconnect/*
 training*/*
 testing*/*
 *.db
-
+*.txt
