@@ -6,6 +6,8 @@ library(tau)
 #library(filehash)
 library(tools)
 library(openNLP)
+library(stringi)
+library(dplyr)
 
 # Limits for creating ngram frequency tables
 MEM_LIMIT <- 1000 # rows per table
@@ -39,7 +41,7 @@ LOG_LEVEL <- 1
 
 modelCorpus_main <- function(export = TRUE, 
                              remove.options = list(profanity = FALSE,
-                                                   stopwords = TRUE,
+                                                   stopwords = FALSE,
                                                    numbers = TRUE,
                                                    punctuation = TRUE,
                                                    case = TRUE,
@@ -48,7 +50,8 @@ modelCorpus_main <- function(export = TRUE,
                              ngram.names = c("unigrams", 
                                              "bigrams", 
                                              "trigrams", 
-                                             "quadgrams"),
+                                             "quadgrams",
+                                             "pentagrams"),
                              corpus.names = c("blogs",
                                               "twitter",
                                               "news"),
@@ -104,7 +107,6 @@ modelCorpus_main <- function(export = TRUE,
         sentence_token_annotator <- Maxent_Sent_Token_Annotator(language = lang)
         
         # Convert text to class String from package NLP
-        modelCorpus_log("Converting ", length(text), " rows of corpus text to marked sentences")
         
         f <- function(t) {
           t <- as.String(t)
@@ -126,6 +128,8 @@ modelCorpus_main <- function(export = TRUE,
         }
         
         max.rows <- min(mem.limit, length(text))
+        modelCorpus_log("Converting ", max.rows, " rows of corpus text to marked sentences")
+        
         return(sapply(text[1:max.rows], f))
       }
       
@@ -184,10 +188,7 @@ modelCorpus_main <- function(export = TRUE,
       assign(this.corpus.name, this.corpus)
     }
   }
-  export_workspace(with.image = TRUE)
   rm(this.corpus, this.corpus.name)
-  
-  modelCorpus_log("Environment ", paste0(ls(), collapse = ", "))
   
   ######
   # Split data for training, testing
@@ -242,13 +243,13 @@ modelCorpus_main <- function(export = TRUE,
                                       dbType = "DB1"))
   
   for (i in 1:length(training)) {
+    this.corp <- file_path_sans_ext(training[[i]][[2]]$id)
+    max.length <- length(training[[i]][[1]]) # already constrained by mem.limit
+    
     for (j in 1:length(ngram.names)) {
-      this.corp <- file_path_sans_ext(training[[i]][[2]]$id)
       this.gram <-  ngram.names[j]
-      
-      max.length <- length(training[[i]][[1]]) # already constrained by mem.limit
       modelCorpus_log("Building ", this.gram, " for ", prettyNum(max.length, big.mark = ","),
-          " rows of ", this.corp)
+                      " rows of ", this.corp)
       
       ngrams <- textcnt(c(training[[i]][[1]][1:max.length]),
                         # split = "[[:space:][:digit:]]+", # keep punctuation
@@ -265,7 +266,7 @@ modelCorpus_main <- function(export = TRUE,
                               x = ngrams$word, 
                               ignore.case = TRUE), ]
 
-            # get rid of non-sense ngrams
+      # get rid of non-sense ngrams
       # if (j > 1) {
       #   ngrams <- ngrams[!grepl(pattern = NON_SENTENCE, 
       #                           x = ngrams$word, 
@@ -284,6 +285,7 @@ modelCorpus_main <- function(export = TRUE,
     # http://www.cs-114.org/wp-content/uploads/2015/01/NgramModels.pdf
 
     rm(ngrams)
+    all.ngrams <- NULL
     for (j in 1:length(ngram.names)) {
       if (j > 1) {
         this.gram <- paste0(this.corp, ".", ngram.names[j])
@@ -294,45 +296,60 @@ modelCorpus_main <- function(export = TRUE,
         
         ngrams.count <- nrow(ngrams)
         ngrams.previous.count <- nrow(ngrams.previous)
-        modelCorpus_log("Calculating MLE for ", ngrams.count, " in ", this.gram)
-        ngrams.previous$MLE <- 
+        modelCorpus_log("Calculating MLE for ", ngrams.previous.count, " in ", previous.gram)
+        ngrams.previous$NPlus1Ct <- 
           sapply(1:ngrams.previous.count, 
                  FUN = function(x) {
-                    this.word <- ngrams.previous[x, ]$word
-                    num <- ngrams.previous[x, ]$count
-                    denom <- sum(ngrams[grepl(this.word,
-                                               ngrams$word), ]$count)
-                    return(num / denom)
+                    this.word <- paste0(ngrams.previous[x, ]$word, " ")
+                    nplus1ct <- sum(ngrams[stri_startswith_fixed(ngrams$word, 
+                                                                 this.word), ]$count)
+                    return(nplus1ct)
                    })
-        
         assign(previous.gram, ngrams.previous)
+        
+        # update master ngram tables
+        modelCorpus_log("Updating master ngrams table with ", 
+                        prettyNum(nrow(ngrams.previous), big.mark = ","),
+                        " rows of ", this.corp)
+        
+        ngrams.previous$ngram <- ngram.names[j-1]
+        if (is.null(all.ngrams)) {
+          all.ngrams <- ngrams.previous
+        } else {
+          all.ngrams <- rbind(all.ngrams, ngrams.previous) %>%
+            group_by(ngram, word) %>%
+            summarize(count = sum(count),
+                      NPlus1Ct = sum(NPlus1Ct))
+        }
       }
     }
   }
   rm(ngrams, ngrams.previous, i, j, max.length,
-     this.corp, this.gram, previous.gram, 
+     this.corp, this.gram, previous.gram,
      ngrams.count, ngrams.previous.count)
-  
+    
   if (export) {
-    export_workspace()
+    export_workspace(with.image = TRUE)
   }
 }
 
 export_workspace <- function(with.image = FALSE) {
+  # export to global environment
+  for (k in ls(pattern = "grams", envir = parent.frame())) {
+    assign(k, get(k, envir = parent.frame()), envir = .GlobalEnv)
+  }
+
   if (with.image) {
-    if (!file.exists("modelCache.RData")) {
-      modelCorpus_log("Saving processed corpus to disk image for faster loading next time")
-      modelCorpus_log("Current environment ", paste0(ls(envir = parent.frame()), collapse = ", "))
-      save(list = ls(pattern = "grams"), 
-           file = "modelCache.RData",
-           envir = parent.frame())
-      
-      save.image("modelCorpusFinalState.RData")
-    }
-  } else {
-    for (k in ls(pattern = "grams", envir = parent.frame())) {
-      assign(k, get(k, envir = parent.frame()), envir = .GlobalEnv)
-    }
+    modelCorpus_log("Saving current environment data frames: ", 
+                    paste0(ls(pattern = "grams", 
+                              envir = parent.frame()), 
+                           collapse = ", "),
+                    log.level = 2)
+    save(list = ls(pattern = "grams", envir = parent.frame()), 
+         file = "modelCache.RData",
+         envir = parent.frame())
+    
+    save.image("modelCorpusFinalState.RData")
   }
 }
 
@@ -350,8 +367,19 @@ modelCorpus_reset_cache <- function() {
   if (file.exists("modelCorpusFinalState.RData")) {
     file.remove("modelCorpusFinalState.RData")
   }
+  
+  t <- list.files(path = "testing", pattern = "txt$", full.names = TRUE)
+  if (length(t) > 0) {
+    do.call(file.remove,as.list(t))
+  }
+  
+  t <- list.files(path = "training", pattern = "txt$", full.names = TRUE)
+  if (length(t) > 0) {
+    do.call(file.remove,as.list(t))
+  }
 }
 
+#modelCorpus_reset_cache(); modelCorpus_main()
 #modelCorpus_reset_cache(); modelCorpus_main(corpus.names = c("blogs"), mem.limit = 100)
 #modelCorpus_reset_cache(); modelCorpus_main(mem.limit = 100)
 #modelCorpus_reset_cache(); modelCorpus_main(mem.limit = 1000, ngram.names = c("unigrams", "bigrams", "trigrams"))
